@@ -8,6 +8,7 @@ const empty={mode:'database',companies:[],our_accounts:[],company_accounts:[],pa
 const money=n=>'₩'+Number(n||0).toLocaleString('en-US');
 const localDate=()=>{const d=new Date();d.setMinutes(d.getMinutes()-d.getTimezoneOffset());return d.toISOString().slice(0,10)};
 const dateText=item=>item.payment_date||new Date(item.paid_at).toLocaleDateString('en-CA');
+const formatAmount=value=>Number(value||0).toLocaleString('en-US');
 
 export default function Home(){
   const [data,setData]=useState(empty);
@@ -21,6 +22,8 @@ export default function Home(){
   const [loading,setLoading]=useState(true);
   const [saving,setSaving]=useState(false);
   const [notice,setNotice]=useState('');
+  const [editing,setEditing]=useState(null);
+  const [deletingId,setDeletingId]=useState('');
 
   const flash=text=>{setNotice(text);setTimeout(()=>setNotice(''),2200)};
 
@@ -54,35 +57,21 @@ export default function Home(){
       'Company Name':p.company_name,
       'Our Card Account':p.our_account,
       'Company Card Account':p.company_account,
-      'Amount':Number(p.amount),
-      'Month':dateText(p).slice(0,7)
+      'Amount':Number(p.amount)
     }));
 
     const workbook=XLSX.utils.book_new();
     const paymentsSheet=XLSX.utils.json_to_sheet(excelRows);
     const lastRow=Math.max(excelRows.length+1,2);
-    paymentsSheet['!cols']=[{wch:7},{wch:13},{wch:24},{wch:25},{wch:27},{wch:16},{wch:11}];
-    paymentsSheet['!autofilter']={ref:`A1:G${lastRow}`};
+    paymentsSheet['!cols']=[{wch:7},{wch:13},{wch:24},{wch:25},{wch:27},{wch:16}];
+    paymentsSheet['!autofilter']={ref:`A1:F${lastRow}`};
     paymentsSheet['!rows']=[{hpt:24}];
-    for(let row=2;row<=lastRow;row++){
-      if(paymentsSheet[`F${row}`])paymentsSheet[`F${row}`].z='₩#,##0';
-    }
+    for(let row=2;row<=lastRow;row++)if(paymentsSheet[`F${row}`])paymentsSheet[`F${row}`].z='₩#,##0';
     XLSX.utils.book_append_sheet(workbook,paymentsSheet,'Payments');
 
     const companyMap=new Map();
-    sorted.forEach(p=>{
-      const current=companyMap.get(p.company_name)||{count:0,total:0,lastDate:''};
-      current.count+=1;
-      current.total+=Number(p.amount||0);
-      if(!current.lastDate||dateText(p)>current.lastDate)current.lastDate=dateText(p);
-      companyMap.set(p.company_name,current);
-    });
-    const companyRows=[...companyMap.entries()].map(([name,v])=>({
-      'Company':name,
-      'Payments':v.count,
-      'Total Amount':v.total,
-      'Latest Payment':v.lastDate
-    })).sort((a,b)=>b['Total Amount']-a['Total Amount']);
+    sorted.forEach(p=>{const current=companyMap.get(p.company_name)||{count:0,total:0,lastDate:''};current.count+=1;current.total+=Number(p.amount||0);if(!current.lastDate||dateText(p)>current.lastDate)current.lastDate=dateText(p);companyMap.set(p.company_name,current)});
+    const companyRows=[...companyMap.entries()].map(([name,v])=>({'Company':name,'Payments':v.count,'Total Amount':v.total,'Latest Payment':v.lastDate})).sort((a,b)=>b['Total Amount']-a['Total Amount']);
     const companySheet=XLSX.utils.json_to_sheet(companyRows);
     companySheet['!cols']=[{wch:28},{wch:12},{wch:18},{wch:16}];
     companySheet['!autofilter']={ref:`A1:D${Math.max(companyRows.length+1,2)}`};
@@ -90,10 +79,7 @@ export default function Home(){
     XLSX.utils.book_append_sheet(workbook,companySheet,'Company Summary');
 
     const monthMap=new Map();
-    sorted.forEach(p=>{
-      const month=dateText(p).slice(0,7),current=monthMap.get(month)||{count:0,total:0};
-      current.count+=1;current.total+=Number(p.amount||0);monthMap.set(month,current);
-    });
+    sorted.forEach(p=>{const month=dateText(p).slice(0,7),current=monthMap.get(month)||{count:0,total:0};current.count+=1;current.total+=Number(p.amount||0);monthMap.set(month,current)});
     const monthRows=[...monthMap.entries()].map(([month,v])=>({'Month':month,'Payments':v.count,'Total Amount':v.total})).sort((a,b)=>b.Month.localeCompare(a.Month));
     const monthSheet=XLSX.utils.json_to_sheet(monthRows);
     monthSheet['!cols']=[{wch:14},{wch:12},{wch:18}];
@@ -102,19 +88,11 @@ export default function Home(){
     XLSX.utils.book_append_sheet(workbook,monthSheet,'Monthly Summary');
 
     const summary=XLSX.utils.aoa_to_sheet([
-      ['PAYFLOW REPORT',''],
-      ['Generated',new Date().toLocaleString('en-GB')],
-      ['Total Payments',sorted.length],
-      ['All-Time Amount',sorted.reduce((sum,p)=>sum+Number(p.amount||0),0)],
-      ['This Month',stats.monthTotal],
-      ['Today',stats.todayTotal],
-      ['',''],
-      ['Tip','Use the filter arrows in the Payments sheet to filter by date, company, accounts, amount, or month.']
+      ['PAYFLOW REPORT',''],['Generated',new Date().toLocaleString('en-GB')],['Total Payments',sorted.length],['All-Time Amount',sorted.reduce((sum,p)=>sum+Number(p.amount||0),0)],['This Month',stats.monthTotal],['Today',stats.todayTotal],['',''],['Tip','Use filter arrows in the Payments sheet to filter by date, company, accounts, or amount.']
     ]);
     summary['!cols']=[{wch:22},{wch:70}];
     ['B4','B5','B6'].forEach(cell=>{if(summary[cell])summary[cell].z='₩#,##0'});
     XLSX.utils.book_append_sheet(workbook,summary,'Summary');
-
     XLSX.writeFile(workbook,'payflow-payments.xlsx',{compression:true});
   }
 
@@ -129,6 +107,13 @@ export default function Home(){
     }catch(e){flash(e.message)}finally{setSaving(false)}
   }
 
+  async function deletePayment(item){
+    if(!window.confirm(`Delete ${item.company_name} payment ${money(item.amount)}?`))return;
+    setDeletingId(item.id);
+    try{await mutate({action:'payment_delete',id:item.id});flash('Payment deleted')}
+    catch(e){flash(e.message)}finally{setDeletingId('')}
+  }
+
   if(loading)return <div className="loading-screen"><div className="loader"/><strong>Loading PayFlow...</strong></div>;
 
   return <div className="app-shell">
@@ -139,19 +124,18 @@ export default function Home(){
     </header>
 
     <main className="page">
-      {tab==='dashboard'?<Dashboard data={data} stats={stats} company={company} setCompany={setCompany} ourAccount={ourAccount} setOurAccount={setOurAccount} companyAccount={companyAccount} setCompanyAccount={setCompanyAccount} availableCompanyAccounts={availableCompanyAccounts} paidAt={paidAt} setPaidAt={setPaidAt} amount={amount} setAmount={setAmount} saving={saving} submitPayment={submitPayment} query={query} setQuery={setQuery} rows={rows}/>:<Settings data={data} addItem={addItem}/>} 
+      {tab==='dashboard'?<Dashboard data={data} stats={stats} company={company} setCompany={setCompany} ourAccount={ourAccount} setOurAccount={setOurAccount} companyAccount={companyAccount} setCompanyAccount={setCompanyAccount} availableCompanyAccounts={availableCompanyAccounts} paidAt={paidAt} setPaidAt={setPaidAt} amount={amount} setAmount={setAmount} saving={saving} submitPayment={submitPayment} query={query} setQuery={setQuery} rows={rows} onEdit={setEditing} onDelete={deletePayment} deletingId={deletingId}/>:<Settings data={data} addItem={addItem}/>} 
     </main>
+
+    {editing&&<EditPaymentModal item={editing} data={data} onClose={()=>setEditing(null)} onSave={async body=>{const fresh=await mutate(body);setEditing(null);flash('Payment updated');setTimeout(()=>exportExcel(fresh.payments),100)}}/>}
     {notice&&<div className="toast">✓ {notice}</div>}
   </div>;
 }
 
-function Dashboard({data,stats,company,setCompany,ourAccount,setOurAccount,companyAccount,setCompanyAccount,availableCompanyAccounts,paidAt,setPaidAt,amount,setAmount,saving,submitPayment,query,setQuery,rows}){
+function Dashboard({data,stats,company,setCompany,ourAccount,setOurAccount,companyAccount,setCompanyAccount,availableCompanyAccounts,paidAt,setPaidAt,amount,setAmount,saving,submitPayment,query,setQuery,rows,onEdit,onDelete,deletingId}){
   return <>
     <div className="page-heading"><div><h1>Payments</h1><p>Record payments quickly and keep everything synced online.</p></div></div>
-
-    <section className="stats-grid">
-      <Stat label="Today" value={money(stats.todayTotal)}/><Stat label="This month" value={money(stats.monthTotal)}/><Stat label="All-time total" value={money(stats.total)}/><Stat label="Payments" value={stats.count}/>
-    </section>
+    <section className="stats-grid"><Stat label="Today" value={money(stats.todayTotal)}/><Stat label="This month" value={money(stats.monthTotal)}/><Stat label="All-time total" value={money(stats.total)}/><Stat label="Payments" value={stats.count}/></section>
 
     <section className="workspace">
       <div className="panel payment-panel">
@@ -160,10 +144,7 @@ function Dashboard({data,stats,company,setCompany,ourAccount,setOurAccount,compa
           <Field label="Company"><SelectControl><select value={company} onChange={e=>setCompany(e.target.value)}><option value="">Choose a company</option>{data.companies.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></SelectControl></Field>
           <Field label="Our card account"><SelectControl><select value={ourAccount} onChange={e=>setOurAccount(e.target.value)}><option value="">Choose our account</option>{data.our_accounts.map(x=><option key={x.id} value={x.id}>{x.label}</option>)}</select></SelectControl></Field>
           <Field label="Company card account"><SelectControl><select value={companyAccount} onChange={e=>setCompanyAccount(e.target.value)} disabled={!company}><option value="">{company?'Choose company account':'Choose company first'}</option>{availableCompanyAccounts.map(x=><option key={x.id} value={x.id}>{x.label}</option>)}</select></SelectControl></Field>
-          <div className="form-row">
-            <Field label="Date"><input type="date" value={paidAt} onChange={e=>setPaidAt(e.target.value)}/></Field>
-            <Field label="Amount"><div className="amount-input"><span>₩</span><input inputMode="numeric" value={amount} placeholder="1,500,000" onChange={e=>{const value=e.target.value.replace(/\D/g,'');setAmount(value?Number(value).toLocaleString('en-US'):'')}}/></div></Field>
-          </div>
+          <div className="form-row"><Field label="Date"><input type="date" value={paidAt} onChange={e=>setPaidAt(e.target.value)}/></Field><Field label="Amount"><div className="amount-input"><span>₩</span><input inputMode="numeric" value={amount} placeholder="1,500,000" onChange={e=>{const value=e.target.value.replace(/\D/g,'');setAmount(value?Number(value).toLocaleString('en-US'):'')}}/></div></Field></div>
           <button className="save-button" disabled={saving}>{saving?'Saving payment...':'Save payment'}</button>
           <p className="form-note">The updated Excel file downloads automatically after saving.</p>
         </form>
@@ -171,11 +152,45 @@ function Dashboard({data,stats,company,setCompany,ourAccount,setOurAccount,compa
 
       <div className="panel history-panel">
         <div className="history-head"><div><h2>Payment history</h2><p>{data.payments.length} total records · newest entry first</p></div><input className="search" placeholder="Search company or account..." value={query} onChange={e=>setQuery(e.target.value)}/></div>
-        <div className="table-wrap"><table><thead><tr><th>Company</th><th>Our account</th><th>Company account</th><th>Date</th><th>Amount</th></tr></thead><tbody>{rows.length?rows.map(item=><tr key={item.id}><td><strong>{item.company_name}</strong></td><td>{item.our_account}</td><td>{item.company_account}</td><td>{dateText(item)}</td><td className="amount-cell">{money(item.amount)}</td></tr>):<tr><td colSpan="5" className="empty-row">No payments yet.</td></tr>}</tbody></table></div>
-        <div className="mobile-history">{rows.length?rows.map(item=><article className="payment-card-mobile" key={item.id}><div className="payment-card-top"><strong>{item.company_name}</strong><b>{money(item.amount)}</b></div><div className="payment-card-line"><span>Our account</span><strong>{item.our_account}</strong></div><div className="payment-card-line"><span>Company account</span><strong>{item.company_account}</strong></div><div className="payment-card-line"><span>Date</span><strong>{dateText(item)}</strong></div></article>):<div className="mobile-empty">No payments yet.</div>}</div>
+        <div className="table-wrap"><table><thead><tr><th>Company</th><th>Our account</th><th>Company account</th><th>Date</th><th>Amount</th><th>Actions</th></tr></thead><tbody>{rows.length?rows.map(item=><tr key={item.id}><td><strong>{item.company_name}</strong></td><td>{item.our_account}</td><td>{item.company_account}</td><td>{dateText(item)}</td><td className="amount-cell">{money(item.amount)}</td><td><div className="row-actions"><button className="edit-btn" onClick={()=>onEdit(item)}>Edit</button><button className="delete-btn" disabled={deletingId===item.id} onClick={()=>onDelete(item)}>{deletingId===item.id?'Deleting...':'Delete'}</button></div></td></tr>):<tr><td colSpan="6" className="empty-row">No payments yet.</td></tr>}</tbody></table></div>
+        <div className="mobile-history">{rows.length?rows.map(item=><article className="payment-card-mobile" key={item.id}><div className="payment-card-top"><strong>{item.company_name}</strong><b>{money(item.amount)}</b></div><div className="payment-card-line"><span>Our account</span><strong>{item.our_account}</strong></div><div className="payment-card-line"><span>Company account</span><strong>{item.company_account}</strong></div><div className="payment-card-line"><span>Date</span><strong>{dateText(item)}</strong></div><div className="mobile-card-actions"><button className="edit-btn" onClick={()=>onEdit(item)}>Edit</button><button className="delete-btn" disabled={deletingId===item.id} onClick={()=>onDelete(item)}>{deletingId===item.id?'Deleting...':'Delete'}</button></div></article>):<div className="mobile-empty">No payments yet.</div>}</div>
       </div>
     </section>
   </>;
+}
+
+function EditPaymentModal({item,data,onClose,onSave}){
+  const [company,setCompany]=useState(String(item.company_id||''));
+  const [ourAccount,setOurAccount]=useState(String(item.our_account_id||''));
+  const [companyAccount,setCompanyAccount]=useState(String(item.company_account_id||''));
+  const [date,setDate]=useState(dateText(item));
+  const [amount,setAmount]=useState(formatAmount(item.amount));
+  const [saving,setSaving]=useState(false);
+  const available=data.company_accounts.filter(x=>String(x.company_id)===String(company));
+
+  useEffect(()=>{if(!available.some(x=>String(x.id)===String(companyAccount)))setCompanyAccount('')},[company]);
+
+  async function submit(e){
+    e.preventDefault();
+    const numericAmount=Number(amount.replace(/\D/g,''));
+    if(!company||!ourAccount||!companyAccount||!date||!numericAmount)return;
+    setSaving(true);
+    try{await onSave({action:'payment_update',id:item.id,company_id:company,our_account_id:ourAccount,company_account_id:companyAccount,payment_date:date,amount:numericAmount})}
+    finally{setSaving(false)}
+  }
+
+  return <div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}>
+    <div className="edit-modal">
+      <div className="modal-head"><div><h2>Edit payment</h2><p>Change only what you need.</p></div><button className="modal-close" onClick={onClose}>×</button></div>
+      <form className="edit-form" onSubmit={submit}>
+        <Field label="Company"><SelectControl><select value={company} onChange={e=>setCompany(e.target.value)}>{data.companies.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></SelectControl></Field>
+        <Field label="Our card account"><SelectControl><select value={ourAccount} onChange={e=>setOurAccount(e.target.value)}>{data.our_accounts.map(x=><option key={x.id} value={x.id}>{x.label}</option>)}</select></SelectControl></Field>
+        <Field label="Company card account"><SelectControl><select value={companyAccount} onChange={e=>setCompanyAccount(e.target.value)}><option value="">Choose company account</option>{available.map(x=><option key={x.id} value={x.id}>{x.label}</option>)}</select></SelectControl></Field>
+        <div className="form-row"><Field label="Date"><input type="date" value={date} onChange={e=>setDate(e.target.value)}/></Field><Field label="Amount"><div className="amount-input"><span>₩</span><input inputMode="numeric" value={amount} onChange={e=>{const value=e.target.value.replace(/\D/g,'');setAmount(value?Number(value).toLocaleString('en-US'):'')}}/></div></Field></div>
+        <div className="modal-actions"><button type="button" className="cancel-btn" onClick={onClose}>Cancel</button><button className="save-edit-btn" disabled={saving}>{saving?'Saving...':'Save changes'}</button></div>
+      </form>
+    </div>
+  </div>;
 }
 
 function Settings({data,addItem}){
