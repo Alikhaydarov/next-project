@@ -1,1 +1,1 @@
-{"framework":"nextjs","buildCommand":"npm run build","outputDirectory":".next"}
+{"framework":"nextjs","buildCommand":"npm run build","outputDirectory":".next","headers":[{"source":"/","headers":[{"key":"Cache-Control","value":"no-store, no-cache, must-revalidate, max-age=0"}]}]}
