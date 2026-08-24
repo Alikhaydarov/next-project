@@ -120,7 +120,7 @@ function EditModal({item,onClose,request,reload,flash}){
   const [newImages,setNewImages]=useState([]);
   const [saving,setSaving]=useState(false);
   const set=(k,v)=>setForm(x=>({...x,[k]:v,...(k==='method'&&v==='cash'?{ourCard:'',clientCard:''}:{})}));
-  async function addFiles(files){try{setNewImages(v=>[...v,...await prepareReceipts(files)])}catch(e){flash(e.message)}}
+  async function addFiles(files){try{const next=await prepareReceipts(files);setNewImages(v=>[...v,...next])}catch(e){flash(e.message)}}
   async function removeExisting(image){if(!window.confirm('Remove this image?'))return;try{await request('POST',{action:'receipt_remove',id:item.id,path:image.path});setExisting(v=>v.filter(x=>x.path!==image.path));flash('Image removed')}catch(e){flash(e.message)}}
   async function submit(e){
     e.preventDefault();const amount=Number(form.amount.replace(/\D/g,''));const cardsOk=form.method==='cash'||(form.ourCard.trim()&&form.clientCard.trim());if(!form.company.trim()||!cardsOk||!validDate(form.date)||!amount)return;
