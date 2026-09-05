@@ -1,1 +1,1 @@
-{"name":"payflow","version":"1.0.0","private":true,"scripts":{"dev":"next dev","build":"next build","start":"next start"},"dependencies":{"@neondatabase/serverless":"^1.0.2","next":"16.2.7","react":"19.2.0","react-dom":"19.2.0","xlsx":"^0.18.5"}}
+{"name":"payflow","version":"1.0.0","private":true,"scripts":{"dev":"next dev","build":"next build","start":"next start"},"dependencies":{"next":"^16.3.4","react":"19.2.0","react-dom":"19.2.0","xlsx":"https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"}}

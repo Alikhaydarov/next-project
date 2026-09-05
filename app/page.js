@@ -3,7 +3,8 @@
 import {useEffect,useMemo,useState} from 'react';
 import * as XLSX from 'xlsx';
 
-const API='https://ehfyhvfmdtbjipgqpvoq.supabase.co/functions/v1/payflow-api';
+const API='https://smzjowoejhgriialdwxc.supabase.co/functions/v1/payflow-api';
+const PUBLISHABLE_KEY=process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY||'sb_publishable_UxHh3GZ8CuNGWeXHW274rQ_IsZIkFhC';
 const MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
 const money=n=>'₩'+Number(n||0).toLocaleString('en-US');
 const localDate=()=>{const d=new Date();d.setMinutes(d.getMinutes()-d.getTimezoneOffset());return d.toISOString().slice(0,10)};
@@ -49,7 +50,7 @@ export default function Home(){
   const [month,setMonth]=useState(localDate().slice(0,7));
 
   const flash=t=>{setNotice(t);setTimeout(()=>setNotice(''),2400)};
-  async function request(method='GET',body){const r=await fetch(API,{method,headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined,cache:'no-store'});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||'Database request failed');return j}
+  async function request(method='GET',body){const r=await fetch(API,{method,headers:{'Content-Type':'application/json',apikey:PUBLISHABLE_KEY,Authorization:`Bearer ${PUBLISHABLE_KEY}`},body:body?JSON.stringify(body):undefined,cache:'no-store'});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||'Database request failed');return j}
   async function load(){try{setData(await request())}catch(e){flash(e.message)}finally{setLoading(false)}}
   async function mutate(body){const j=await request('POST',body);setData(j);return j}
   useEffect(()=>{load()},[]);
